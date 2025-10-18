@@ -1,0 +1,193 @@
+// ==================== TASK 3: GRAPH DATABASE QUERIES ====================
+
+// Query 1: Simple Query - Find all active campaigns
+// Use Case: Marketing manager wants to see all currently running campaigns
+MATCH (c:Campaign)
+WHERE c.status = 'Active'
+RETURN c.campaign_id AS id, 
+       c.title AS campaign_name, 
+       c.goal AS objective,
+       c.start_date AS start_date,
+       c.end_date AS end_date,
+       c.budget AS budget,
+       c.status AS status
+ORDER BY c.title;
+
+// Query 2: Simple Query - Find converted leads with engagement history
+// Use Case: Sales team wants to contact converted leads for follow-up
+MATCH (l:Lead)
+WHERE l.conversion_status = 'Converted'
+RETURN l.lead_id AS lead_id,
+       l.name AS lead_name, 
+       l.email AS email,
+       l.engagement_history AS engagement_history,
+       l.conversion_status AS status
+ORDER BY l.name;
+
+// Query 3: Moderate Query - Campaign performance with channel details
+// Use Case: Analyze which channels performed best for completed campaigns
+MATCH (c:Campaign {status: 'Completed'})-[:USES]->(ch:Channel)
+MATCH (ch)-[:HAS_METRIC]->(m:Metric)
+RETURN c.campaign_id AS campaign_id,
+       c.title AS campaign_name,
+       c.goal AS campaign_goal,
+       ch.channel_name AS channel_name,
+       ch.platform_type AS platform_type,
+       m.metric_type AS metric_type,
+       m.value AS metric_value,
+       m.metric_date AS metric_date
+ORDER BY c.title, m.metric_date;
+
+// Query 4: Complex Query - Campaigns exceeding budget thresholds
+// Use Case: Financial controller wants to identify campaigns needing budget review
+MATCH (c:Campaign)-[:HAS_BUDGET]->(b:Budget)
+WITH c, b, (b.actual_spend / c.budget * 100) AS percent_spent
+WHERE percent_spent > 50
+RETURN c.campaign_id AS campaign_id,
+       c.title AS campaign_name,
+       c.budget AS allocated_budget,
+       b.actual_spend AS actual_spend,
+       ROUND(percent_spent, 2) AS percent_spent,
+       CASE 
+         WHEN percent_spent > 75 THEN 'High Alert' 
+         WHEN percent_spent > 50 THEN 'Monitor' 
+         ELSE 'Within Budget' 
+       END AS budget_status
+ORDER BY percent_spent DESC;
+
+// Query 5: Additional Query - Team member task assignments
+// Use Case: Project manager wants to see task assignments and deadlines
+MATCH (m:TeamMember)-[:ASSIGNED_TO]->(s:Schedule)<-[:HAS_SCHEDULE]-(c:Campaign)
+RETURN m.member_id AS member_id,
+       m.name AS team_member,
+       m.role AS role,
+       c.title AS campaign_name,
+       s.task_description AS task,
+       s.deadline AS deadline,
+       s.priority AS priority,
+       s.completion_status AS status
+ORDER BY s.deadline, s.priority;
+
+// Query 6: Multi-hop Query - Campaign conversion paths
+// Use Case: Marketing analyst wants to trace customer journey from campaign to conversion
+MATCH path = (c:Campaign)-[:GENERATES]->(l:Lead {conversion_status: 'Converted'})
+RETURN c.title AS campaign_name,
+       l.name AS lead_name,
+       l.conversion_status AS status,
+       length(path) AS path_length,
+       [n IN nodes(path) | coalesce(n.title, n.name)] AS path_nodes
+ORDER BY path_length, campaign_name;
+
+// Query 7: Aggregation Query - Campaign results summary
+// Use Case: Campaign manager wants summary of all campaign results
+MATCH (c:Campaign)-[:GENERATES]->(r:Result)
+RETURN c.title AS campaign_name,
+       c.status AS status,
+       collect(r.conversion_type) AS conversion_types,
+       sum(r.quantity) AS total_conversions,
+       avg(r.quantity) AS avg_conversions
+ORDER BY total_conversions DESC;
+
+// Query 8: Filtered Relationship Query - High priority tasks
+// Use Case: Team lead wants to identify high priority pending tasks
+MATCH (c:Campaign)-[:HAS_SCHEDULE]->(s:Schedule)<-[:ASSIGNED_TO]-(m:TeamMember)
+WHERE s.priority = 'High' AND s.completion_status = 'Pending'
+RETURN c.title AS campaign,
+       m.name AS assigned_to,
+       s.task_description AS task,
+       s.deadline AS deadline,
+       s.priority AS priority
+ORDER BY s.deadline;
+
+// ==================== CENTRALITY ALGORITHM (PageRank) ====================
+
+// Use Case: Identify most influential marketing channels
+CALL gds.graph.project(
+  'channelInfluence',
+  ['Campaign', 'Channel'],
+  {
+    USES: {
+      orientation: 'REVERSE',
+      properties: {
+        weight: {
+          property: 'estimated_reach',
+          defaultValue: 1.0
+        }
+      }
+    }
+  }
+);
+
+CALL gds.pageRank.stream('channelInfluence', {
+  maxIterations: 20,
+  dampingFactor: 0.85,
+  relationshipWeightProperty: 'weight'
+})
+YIELD nodeId, score
+WITH gds.util.asNode(nodeId) AS channel, score
+WHERE channel:Channel
+RETURN channel.channel_name AS channel_name,
+       channel.platform_type AS platform_type,
+       channel.estimated_reach AS estimated_reach,
+       ROUND(score, 4) AS influence_score
+ORDER BY influence_score DESC;
+
+// ==================== SIMILARITY ALGORITHM (Jaccard) ====================
+
+// Use Case: Find similar audience segments based on campaign targeting
+CALL gds.graph.project(
+  'audienceSimilarity',
+  ['Audience', 'Campaign'],
+  {
+    TARGETS: {
+      orientation: 'UNDIRECTED'
+    }
+  }
+);
+
+CALL gds.nodeSimilarity.stream('audienceSimilarity', {
+  similarityMetric: 'JACCARD',
+  degreeCutoff: 1
+})
+YIELD node1, node2, similarity
+WITH gds.util.asNode(node1) AS audience1, gds.util.asNode(node2) AS audience2, similarity
+WHERE audience1:Audience AND audience2:Audience AND id(audience1) < id(audience2)
+RETURN audience1.age_range AS audience1_age,
+       audience1.demographics AS audience1_demo,
+       audience2.age_range AS audience2_age,
+       audience2.demographics AS audience2_demo,
+       ROUND(similarity, 3) AS jaccard_similarity
+ORDER BY similarity DESC
+LIMIT 10;
+
+// ==================== VALIDATION AND UTILITY QUERIES ====================
+
+// Verify database structure
+MATCH (n) 
+RETURN labels(n)[0] as node_type, count(n) as count 
+ORDER BY node_type;
+
+// Check relationship types
+MATCH ()-[r]->() 
+RETURN type(r) as relationship_type, count(r) as count 
+ORDER BY count DESC;
+
+// Find nodes with missing relationships
+MATCH (c:Campaign)
+WHERE NOT (c)-[:USES]->(:Channel)
+RETURN c.title AS campaign, 'No channels' AS missing_relationship;
+
+// Campaign performance summary
+MATCH (c:Campaign)
+OPTIONAL MATCH (c)-[:HAS_BUDGET]->(b:Budget)
+OPTIONAL MATCH (c)-[:GENERATES]->(r:Result)
+RETURN c.title AS campaign,
+       c.status AS status,
+       b.budgeted_amount AS budget,
+       b.actual_spend AS spent,
+       sum(r.quantity) AS conversions,
+       CASE WHEN b.budgeted_amount > 0 
+            THEN round((sum(r.quantity)/b.budgeted_amount)*1000, 2) 
+            ELSE 0 
+       END AS efficiency_score
+ORDER BY efficiency_score DESC;

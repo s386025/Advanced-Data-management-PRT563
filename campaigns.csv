@@ -1,0 +1,4 @@
+campaign_id,title,goal,start_date,end_date,budget,status
+1,Diabetes Awareness,Increase awareness about diabetes prevention,2023-11-01,2023-11-30,5000.00,Completed
+2,Winter Vaccination Drive,Promote flu vaccination,2023-12-01,2023-12-31,7500.00,Active
+3,Mental Health Week,Reduce stigma around mental health,2024-01-15,2024-01-22,3000.00,Planning

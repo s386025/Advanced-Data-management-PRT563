@@ -1,0 +1,195 @@
+// Digital Marketing Campaign Management System - Neo4j Import Script
+// This script migrates data from SQLite to Neo4j
+
+// ==================== CONSTRAINTS CREATION ====================
+
+// Create uniqueness constraints for all primary keys
+CREATE CONSTRAINT campaign_id_constraint IF NOT EXISTS FOR (c:Campaign) REQUIRE c.campaign_id IS UNIQUE;
+CREATE CONSTRAINT channel_id_constraint IF NOT EXISTS FOR (ch:Channel) REQUIRE ch.channel_id IS UNIQUE;
+CREATE CONSTRAINT audience_id_constraint IF NOT EXISTS FOR (a:Audience) REQUIRE a.segment_id IS UNIQUE;
+CREATE CONSTRAINT creative_id_constraint IF NOT EXISTS FOR (cr:Creative) REQUIRE cr.creative_id IS UNIQUE;
+CREATE CONSTRAINT member_id_constraint IF NOT EXISTS FOR (m:TeamMember) REQUIRE m.member_id IS UNIQUE;
+CREATE CONSTRAINT lead_id_constraint IF NOT EXISTS FOR (l:Lead) REQUIRE l.lead_id IS UNIQUE;
+CREATE CONSTRAINT budget_id_constraint IF NOT EXISTS FOR (b:Budget) REQUIRE b.budget_id IS UNIQUE;
+CREATE CONSTRAINT result_id_constraint IF NOT EXISTS FOR (r:Result) REQUIRE r.result_id IS UNIQUE;
+CREATE CONSTRAINT metric_id_constraint IF NOT EXISTS FOR (m:Metric) REQUIRE m.metric_id IS UNIQUE;
+CREATE CONSTRAINT schedule_id_constraint IF NOT EXISTS FOR (s:Schedule) REQUIRE s.task_id IS UNIQUE;
+
+// ==================== NODE CREATION ====================
+
+// Load Campaign nodes
+LOAD CSV WITH HEADERS FROM 'file:///campaigns.csv' AS row
+CREATE (:Campaign {
+  campaign_id: toInteger(row.campaign_id),
+  title: row.title,
+  goal: row.goal,
+  start_date: date(row.start_date),
+  end_date: date(row.end_date),
+  budget: toFloat(row.budget),
+  status: row.status
+});
+
+// Load Channel nodes
+LOAD CSV WITH HEADERS FROM 'file:///marketing_channels.csv' AS row
+CREATE (:Channel {
+  channel_id: toInteger(row.channel_id),
+  channel_name: row.channel_name,
+  platform_type: row.platform_type,
+  estimated_reach: toInteger(row.estimated_reach)
+});
+
+// Load Audience nodes
+LOAD CSV WITH HEADERS FROM 'file:///target_audience_segments.csv' AS row
+CREATE (:Audience {
+  segment_id: toInteger(row.segment_id),
+  age_range: row.age_range,
+  demographics: row.demographics,
+  location: row.location,
+  interests: row.interests
+});
+
+// Load Creative nodes
+LOAD CSV WITH HEADERS FROM 'file:///ad_creatives.csv' AS row
+CREATE (:Creative {
+  creative_id: toInteger(row.creative_id),
+  file_type: row.file_type,
+  format: row.format,
+  message_tone: row.message_tone,
+  content: row.content
+});
+
+// Load TeamMember nodes
+LOAD CSV WITH HEADERS FROM 'file:///marketing_team_members.csv' AS row
+CREATE (:TeamMember {
+  member_id: toInteger(row.member_id),
+  name: row.name,
+  role: row.role,
+  contact_info: row.contact_info
+});
+
+// Load Lead nodes
+LOAD CSV WITH HEADERS FROM 'file:///leads.csv' AS row
+CREATE (:Lead {
+  lead_id: toInteger(row.lead_id),
+  name: row.name,
+  email: row.email,
+  engagement_history: row.engagement_history,
+  conversion_status: row.conversion_status
+});
+
+// Load Metric nodes
+LOAD CSV WITH HEADERS FROM 'file:///engagement_metrics.csv' AS row
+CREATE (:Metric {
+  metric_id: toInteger(row.metric_id),
+  metric_date: date(row.metric_date),
+  metric_type: row.metric_type,
+  value: toFloat(row.value)
+});
+
+// Load Budget nodes
+LOAD CSV WITH HEADERS FROM 'file:///budgets.csv' AS row
+CREATE (:Budget {
+  budget_id: toInteger(row.budget_id),
+  budgeted_amount: toFloat(row.budgeted_amount),
+  actual_spend: toFloat(row.actual_spend),
+  cost_alert: toBoolean(row.cost_alert)
+});
+
+// Load Result nodes
+LOAD CSV WITH HEADERS FROM 'file:///campaign_results.csv' AS row
+CREATE (:Result {
+  result_id: toInteger(row.result_id),
+  conversion_type: row.conversion_type,
+  quantity: toInteger(row.quantity)
+});
+
+// Load Schedule nodes
+LOAD CSV WITH HEADERS FROM 'file:///schedules.csv' AS row
+CREATE (:Schedule {
+  task_id: toInteger(row.task_id),
+  task_description: row.task_description,
+  deadline: date(row.deadline),
+  priority: row.priority,
+  completion_status: row.completion_status
+});
+
+// ==================== RELATIONSHIP CREATION ====================
+
+// Create relationships between Campaigns and Channels
+LOAD CSV WITH HEADERS FROM 'file:///campaign_channels.csv' AS row
+MATCH (c:Campaign {campaign_id: toInteger(row.campaign_id)})
+MATCH (ch:Channel {channel_id: toInteger(row.channel_id)})
+CREATE (c)-[:USES]->(ch);
+
+// Create relationships between Campaigns and Audiences
+LOAD CSV WITH HEADERS FROM 'file:///campaign_targets.csv' AS row
+MATCH (c:Campaign {campaign_id: toInteger(row.campaign_id)})
+MATCH (a:Audience {segment_id: toInteger(row.segment_id)})
+CREATE (c)-[:TARGETS]->(a);
+
+// Create relationships between Campaigns and Creatives
+LOAD CSV WITH HEADERS FROM 'file:///campaign_creatives.csv' AS row
+MATCH (c:Campaign {campaign_id: toInteger(row.campaign_id)})
+MATCH (cr:Creative {creative_id: toInteger(row.creative_id)})
+CREATE (c)-[:HAS_CREATIVE]->(cr);
+
+// Create relationships between Campaigns and Leads
+LOAD CSV WITH HEADERS FROM 'file:///campaign_leads.csv' AS row
+MATCH (c:Campaign {campaign_id: toInteger(row.campaign_id)})
+MATCH (l:Lead {lead_id: toInteger(row.lead_id)})
+CREATE (c)-[:GENERATES {date_enrolled: date(row.date_enrolled)}]->(l);
+
+// Create relationships between Campaigns and Budgets
+LOAD CSV WITH HEADERS FROM 'file:///budgets.csv' AS row
+MATCH (c:Campaign {campaign_id: toInteger(row.campaign_id)})
+MATCH (b:Budget {budget_id: toInteger(row.budget_id)})
+CREATE (c)-[:HAS_BUDGET]->(b);
+
+// Create relationships between Campaigns and Results
+LOAD CSV WITH HEADERS FROM 'file:///campaign_results.csv' AS row
+MATCH (c:Campaign {campaign_id: toInteger(row.campaign_id)})
+MATCH (r:Result {result_id: toInteger(row.result_id)})
+CREATE (c)-[:GENERATES]->(r);
+
+// Create relationships between Campaigns and Schedules
+LOAD CSV WITH HEADERS FROM 'file:///schedules.csv' AS row
+MATCH (c:Campaign {campaign_id: toInteger(row.campaign_id)})
+MATCH (s:Schedule {task_id: toInteger(row.task_id)})
+CREATE (c)-[:HAS_SCHEDULE]->(s);
+
+// Create relationships between TeamMembers and Schedules
+LOAD CSV WITH HEADERS FROM 'file:///schedules.csv' AS row
+MATCH (m:TeamMember {member_id: toInteger(row.member_id)})
+MATCH (s:Schedule {task_id: toInteger(row.task_id)})
+CREATE (m)-[:ASSIGNED_TO]->(s);
+
+// Create relationships between Channels and Metrics
+LOAD CSV WITH HEADERS FROM 'file:///engagement_metrics.csv' AS row
+MATCH (ch:Channel {channel_id: toInteger(row.channel_id)})
+MATCH (m:Metric {metric_id: toInteger(row.metric_id)})
+CREATE (ch)-[:HAS_METRIC]->(m);
+
+// ==================== INDEX CREATION ====================
+
+// Create indexes for frequently queried properties
+CREATE INDEX campaign_status_index FOR (c:Campaign) ON (c.status);
+CREATE INDEX campaign_title_index FOR (c:Campaign) ON (c.title);
+CREATE INDEX lead_status_index FOR (l:Lead) ON (l.conversion_status);
+CREATE INDEX lead_email_index FOR (l:Lead) ON (l.email);
+CREATE INDEX metric_date_index FOR (m:Metric) ON (m.metric_date);
+CREATE INDEX metric_type_index FOR (m:Metric) ON (m.metric_type);
+CREATE INDEX channel_type_index FOR (ch:Channel) ON (ch.platform_type);
+CREATE INDEX audience_age_index FOR (a:Audience) ON (a.age_range);
+CREATE INDEX schedule_deadline_index FOR (s:Schedule) ON (s.deadline);
+CREATE INDEX schedule_priority_index FOR (s:Schedule) ON (s.priority);
+
+// ==================== VALIDATION QUERIES ====================
+
+// Verify node counts
+MATCH (n) RETURN labels(n)[0] as label, count(n) as count 
+ORDER BY label;
+
+// Verify relationship counts
+MATCH ()-[r]->() 
+RETURN type(r) as relationship_type, count(r) as count 
+ORDER BY relationship_type;
